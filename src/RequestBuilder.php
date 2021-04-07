@@ -9,9 +9,10 @@ declare(strict_types=1);
 
 namespace FAPI\Localise;
 
-use Http\Discovery\MessageFactoryDiscovery;
+use Http\Discovery\Psr17FactoryDiscovery;
 use Http\Message\MultipartStream\MultipartStreamBuilder;
 use Http\Message\RequestFactory;
+use Http\Message\StreamFactory;
 use Psr\Http\Message\RequestInterface;
 
 /**
@@ -32,14 +33,17 @@ final class RequestBuilder
     private $multipartStreamBuilder;
 
     /**
-     * @param RequestFactory         $requestFactory
-     * @param MultipartStreamBuilder $multipartStreamBuilder
+     * @param RequestFactory|null $requestFactory
+     * @param StreamFactory|null $streamFactory
+     * @param MultipartStreamBuilder|null $multipartStreamBuilder
      */
     public function __construct(
         RequestFactory $requestFactory = null,
+        StreamFactory $streamFactory = null,
         MultipartStreamBuilder $multipartStreamBuilder = null
     ) {
-        $this->requestFactory = $requestFactory ?: MessageFactoryDiscovery::find();
+        $this->requestFactory = $requestFactory ?: Psr17FactoryDiscovery::findRequestFactory();
+        $this->streamFactory = $streamFactory ?: Psr17FactoryDiscovery::findStreamFactory();
         $this->multipartStreamBuilder = $multipartStreamBuilder ?: new MultipartStreamBuilder();
     }
 
@@ -62,25 +66,35 @@ final class RequestBuilder
      */
     public function create(string $method, string $uri, array $headers = [], $body = null): RequestInterface
     {
-        if (!is_array($body)) {
-            return $this->requestFactory->createRequest($method, $uri, $headers, $body);
+        $request = $this->requestFactory->createRequest($method, $uri);
+
+        if ($body) {
+            if (!is_array($body)) {
+                $request = $request->withBody($this->streamFactory->createStream($body));
+            } else {
+                foreach ($body as $item) {
+                    $name = $item['name'];
+                    $content = $item['content'];
+                    unset($item['name']);
+                    unset($item['content']);
+
+                    $this->multipartStreamBuilder->addResource($name, $content, $item);
+                }
+
+                $multipartStream = $this->multipartStreamBuilder->build();
+                $boundary = $this->multipartStreamBuilder->getBoundary();
+
+                $headers['Content-Type'] = 'multipart/form-data; boundary='.$boundary;
+                $this->multipartStreamBuilder->reset();
+
+                $request = $request->withBody($multipartStream);
+            }
         }
 
-        foreach ($body as $item) {
-            $name = $item['name'];
-            $content = $item['content'];
-            unset($item['name']);
-            unset($item['content']);
-
-            $this->multipartStreamBuilder->addResource($name, $content, $item);
+        foreach ($headers as $header => $value) {
+            $request = $request->withHeader($header, $value);
         }
 
-        $multipartStream = $this->multipartStreamBuilder->build();
-        $boundary = $this->multipartStreamBuilder->getBoundary();
-
-        $headers['Content-Type'] = 'multipart/form-data; boundary='.$boundary;
-        $this->multipartStreamBuilder->reset();
-
-        return $this->requestFactory->createRequest($method, $uri, $headers, $multipartStream);
+        return $request;
     }
 }

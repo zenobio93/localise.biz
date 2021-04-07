@@ -12,7 +12,7 @@ namespace FAPI\Localise;
 use Http\Client\HttpClient;
 use Http\Client\Common\PluginClient;
 use Http\Discovery\HttpClientDiscovery;
-use Http\Discovery\UriFactoryDiscovery;
+use Http\Discovery\Psr17FactoryDiscovery;
 use Http\Message\UriFactory;
 use Http\Client\Common\Plugin;
 
@@ -57,7 +57,7 @@ final class HttpClientConfigurator
     public function __construct(HttpClient $httpClient = null, UriFactory $uriFactory = null)
     {
         $this->httpClient = $httpClient ?? HttpClientDiscovery::find();
-        $this->uriFactory = $uriFactory ?? UriFactoryDiscovery::find();
+        $this->uriFactory = $uriFactory ?? Psr17FactoryDiscovery::findUriFactory();
     }
 
     /**
